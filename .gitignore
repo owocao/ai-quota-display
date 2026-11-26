@@ -1,0 +1,12 @@
+# 运行时缓存与日志（包含个人用量快照，禁止提交）
+cache.json
+logs/
+*.pid
+
+# 本地个人配置（包含局域网设备 IP，请参考 config.env.example）
+config.env
+
+# Python / macOS 临时文件
+__pycache__/
+*.pyc
+.DS_Store
