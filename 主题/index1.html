@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#000000" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <title>AI Quota</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #000; }
+    body { color: #eee; font: 14px/1.2 Roboto, "Noto Sans SC", sans-serif; font-variant-numeric: tabular-nums; }
+    .stage { height: 100%; padding: 5px 2.4vw 10px; display: flex; flex-direction: column; transition: transform 1.2s ease-in-out; }
+    .topbar, .clock-wrap, .sync-wrap, .sync-status, .card-header, .brand, .cards-head {
+      display: flex; align-items: center;
+    }
+    .topbar { height: 31px; flex: none; justify-content: space-between; color: #aaa; font-size: 12px; border-bottom: 1px solid #454545; }
+    .date:before { content: "·"; margin: 0 4px; }
+    .sync-status { color: #63dfa1; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; background: currentColor; }
+    .dot.loading, .dot.loading + span, .urgent, .stale-note { color: #f2bc4c; }
+    .dot.error, .dot.error + span, .error-msg { color: #f67b70; }
+    .updated { border-left: 1px solid #555; padding-left: 10px; margin: 0 12px; }
+    .btn-refresh, .plan-badge { border: 1px solid #888; border-radius: 4px; background: #000; color: #ddd; white-space: nowrap; }
+    .btn-refresh { padding: 3px 8px; font: inherit; cursor: pointer; }
+    .grid { flex: 1; min-height: 0; display: grid; grid-template-columns: 48% 52%; }
+    .card { min-width: 0; display: flex; flex-direction: column; padding-top: 8px; }
+    #codexCard { padding-right: 12px; border-right: 1px solid #454545; }
+    #agyCard { padding-left: 16px; }
+    .card-header, .cards-head { justify-content: space-between; }
+    .brand-name { font-size: 22px; font-weight: 700; }
+    .plan-badge { margin-left: 8px; padding: 1px 6px; font-size: 13px; }
+    #codexPlan { text-transform: uppercase; }
+    .credits-pill { font-size: 15px; font-weight: 600; }
+    .pair { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); }
+    .meter { min-width: 0; padding-right: 12px; }
+    .meter + .meter { border-left: 1px solid #444; padding: 0 0 0 12px; }
+    .meter-title, .reset-text { color: #bbb; }
+    .pct { font-size: 32px; font-weight: 700; line-height: 1.25; }
+    .pct small { font-size: 68%; }
+    .track { background: #383838; border-radius: 5px; height: 8px; margin: 3px 0 5px; overflow: hidden; }
+    .fill { height: 100%; border-radius: inherit; }
+    .reset-text { font-size: 12px; }
+    #codexMeters { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+    .cards-box { height: 48%; border-top: 1px solid #454545; padding-top: 8px; }
+    .cards-box:empty { display: none; }
+    .cards-count { font-size: 17px; font-weight: 600; }
+    .cards-count strong { font-size: 30px; }
+    .cards-next { font-size: 13px; }
+    .card-chips { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); grid-gap: 6px; gap: 6px; margin-top: 10px; }
+    .chip { text-align: center; white-space: nowrap; padding: 8px 0; border: 1px solid #444; border-radius: 5px; font-size: 14px; color: #ccc; }
+    .chip.urgent { color: #f2bc4c; }
+    #agyMeters { flex: 1; display: flex; flex-direction: column; }
+    .group { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+    .group + .group { border-top: 1px solid #454545; }
+    .group h2 { margin: 0 0 3px; font-size: 18px; }
+    .stale-note, .error-msg { font-size: 12px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    @media (orientation: portrait) {
+      .grid { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
+      #codexCard { border-right: 0; padding-right: 0; }
+      #agyCard { border-top: 1px solid #454545; padding-left: 0; }
+      .updated { margin: 0 4px; padding-left: 4px; }
+      .topbar { font-size: 10px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="stage" id="stage">
+    <div class="topbar">
+      <div class="clock-wrap">
+        <div class="clock" id="clock">--:--</div>
+        <div class="date" id="date">----/--/--</div>
+      </div>
+      <div class="sync-wrap">
+        <div class="sync-status">
+          <span class="dot" id="syncDot"></span>
+          <span id="syncText">等待同步</span>
+        </div>
+        <span class="updated" id="updated">更新于 --:--:--</span>
+        <button class="btn-refresh" id="refreshBtn" type="button">↻ 刷新</button>
+      </div>
+    </div>
+
+    <div class="grid">
+      <!-- 左侧：Codex -->
+      <section class="card" id="codexCard">
+        <div class="card-header">
+          <div class="brand">
+            <span class="brand-name">Codex</span>
+            <span class="plan-badge" id="codexPlan">--</span>
+          </div>
+          <div class="credits-pill" id="codexCredits">-- Credits</div>
+        </div>
+        <div class="meters" id="codexMeters"></div>
+        <div class="cards-box" id="codexResetBox"></div>
+      </section>
+
+      <!-- 右侧：Antigravity -->
+      <section class="card" id="agyCard">
+        <div class="card-header">
+          <div class="brand">
+            <span class="brand-name">Antigravity</span>
+            <span class="plan-badge" id="agyPlan">--</span>
+          </div>
+        </div>
+        <div class="meters" id="agyMeters"></div>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      var stageEl = document.getElementById("stage");
+      var clockEl = document.getElementById("clock");
+      var dateEl = document.getElementById("date");
+      var syncDot = document.getElementById("syncDot");
+      var syncText = document.getElementById("syncText");
+      var refreshBtn = document.getElementById("refreshBtn");
+
+      function pad(n) {
+        return n < 10 ? "0" + n : "" + n;
+      }
+
+      function updateClock() {
+        var d = new Date();
+        var weeks = "日一二三四五六";
+        clockEl.textContent = pad(d.getHours()) + ":" + pad(d.getMinutes());
+        dateEl.textContent = (d.getMonth() + 1) + "月" + d.getDate() + "日 星期" + weeks[d.getDay()];
+      }
+
+      // OLED 防烧屏微移：每 60 秒在 ±3px 内平滑移动
+      var shifts = [[0, 0], [2, 1], [-2, 2], [-3, -1], [1, -2], [3, 0], [-1, 1]];
+      var shiftIdx = 0;
+      function pixelShift() {
+        shiftIdx = (shiftIdx + 1) % shifts.length;
+        var pair = shifts[shiftIdx];
+        stageEl.style.transform = "translate(" + pair[0] + "px, " + pair[1] + "px)";
+      }
+
+      function formatRemaining(iso, event) {
+        if (!iso) return "";
+        var diffMs = new Date(iso).getTime() - Date.now();
+        if (isNaN(diffMs)) return "";
+        if (diffMs <= 0) return "即将" + event;
+        var mins = Math.floor(diffMs / 60000);
+        var days = Math.floor(mins / 1440);
+        var hours = Math.floor((mins % 1440) / 60);
+        var remMins = mins % 60;
+        if (days > 0) return days + "天" + hours + "时后";
+        if (hours > 0) return hours + "时" + remMins + "分后";
+        return remMins + "分后";
+      }
+
+      function formatShortDate(iso) {
+        if (!iso) return "--";
+        var d = new Date(iso);
+        if (isNaN(d.getTime())) return "--";
+        return pad(d.getMonth() + 1) + "/" + pad(d.getDate()) + " " + pad(d.getHours()) + ":" + pad(d.getMinutes());
+      }
+
+      function element(tag, cls, text) {
+        var el = document.createElement(tag);
+        if (cls) el.className = cls;
+        if (text !== undefined) el.textContent = text;
+        return el;
+      }
+
+      function meter(w) {
+        var box = element("div", "meter");
+        box.appendChild(element("div", "meter-title", w.label + "剩余"));
+        var value = element("div", "pct", w.inactive ? "未激活" : "--");
+        var track = element("div", "track");
+        if (!w.inactive && typeof w.usedPercent === "number" && isFinite(w.usedPercent)) {
+          var remaining = Math.max(0, Math.min(100, 100 - w.usedPercent));
+          value.textContent = Number(remaining.toFixed(2));
+          value.appendChild(element("small", "", "%"));
+          var fill = element("div", "fill");
+          fill.style.width = remaining + "%";
+          // Hue travels continuously through yellow at half quota to green at full quota.
+          fill.style.backgroundColor = "hsl(" + (remaining <= 50 ? remaining * 1.2 : 60 + (remaining - 50) * 1.65) + ", 79%, 59%)";
+          track.appendChild(fill);
+        }
+        box.appendChild(value);
+        box.appendChild(track);
+        if (!w.inactive) {
+          var countdown = formatRemaining(w.resetsAt, "重置");
+          box.appendChild(element("div", "reset-text", w.resetsAt ?
+            countdown + (countdown.slice(-1) === "后" ? "重置" : "") : "未计费"));
+        }
+        return box;
+      }
+
+      function pair(windows) {
+        var row = element("div", "pair");
+        windows.slice().sort(function (a, b) {
+          return a.windowMinutes - b.windowMinutes;
+        }).forEach(function (w) { row.appendChild(meter(w)); });
+        return row;
+      }
+
+      function renderCards(rc) {
+        var box = document.getElementById("codexResetBox");
+        box.textContent = "";
+        if (!rc) return;
+        var items = (rc.items || []).filter(function (item) {
+          return item && isFinite(Date.parse(item.expiresAt));
+        }).sort(function (a, b) { return Date.parse(a.expiresAt) - Date.parse(b.expiresAt); });
+        var available = rc.available == null ? items.length : rc.available;
+        var head = element("div", "cards-head");
+        var count = element("div", "cards-count", "重置卡 ");
+        count.appendChild(element("strong", "", available));
+        count.appendChild(document.createTextNode(" 张"));
+        head.appendChild(count);
+        box.appendChild(head);
+        if (!available) return;
+
+        function urgent(iso) {
+          return Date.parse(iso) - Date.now() <= 5 * 86400000 ? " urgent" : "";
+        }
+        var next = rc.nextExpiresAt || (items[0] && items[0].expiresAt);
+        if (next) head.appendChild(element("div", "cards-next" + urgent(next), "最近到期 " + formatRemaining(next, "到期")));
+        var chips = element("div", "card-chips");
+        items.slice(0, Math.min(6, available)).forEach(function (item) {
+          chips.appendChild(element("span", "chip" + urgent(item.expiresAt), formatShortDate(item.expiresAt)));
+        });
+        box.appendChild(chips);
+      }
+
+      function renderProvider(prefix, data) {
+        var plan = document.getElementById(prefix + "Plan");
+        var meters = document.getElementById(prefix + "Meters");
+        meters.textContent = "";
+        var ok = data && data.ok;
+        plan.textContent = ok ? (data.plan || "--") : "OFFLINE";
+        if (prefix === "codex") {
+          var credits = ok && data.creditsRemaining != null ? Number(data.creditsRemaining).toLocaleString() : "--";
+          document.getElementById("codexCredits").textContent = credits + " Credits";
+          renderCards(ok && data.resetCards);
+        }
+        if (!ok) {
+          meters.appendChild(element("div", "error-msg", (data && data.error) || "暂无数据"));
+          return;
+        }
+        var windows = data.windows || [];
+        if (prefix === "codex") {
+          meters.appendChild(pair(windows));
+        } else {
+          var groups = Object.create(null);
+          windows.forEach(function (w) {
+            var name = w.group || "配额";
+            if (!groups[name]) groups[name] = [];
+            groups[name].push(w);
+          });
+          Object.keys(groups).forEach(function (name) {
+            var group = element("section", "group");
+            group.appendChild(element("h2", "", name));
+            group.appendChild(pair(groups[name]));
+            meters.appendChild(group);
+          });
+        }
+        if (data.staleError) meters.appendChild(element("div", "stale-note", "显示缓存 · " + data.staleError));
+      }
+
+      function fetchQuota() {
+        var xhr = new XMLHttpRequest();
+        xhr.open("GET", "/api/quota?t=" + Date.now(), true);
+        xhr.timeout = 8000;
+        xhr.onreadystatechange = function () {
+          if (xhr.readyState !== 4) return;
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try {
+              var data = JSON.parse(xhr.responseText);
+              renderProvider("codex", data.codex);
+              renderProvider("agy", data.antigravity);
+              var d = new Date(data.fetchedAt || "");
+              document.getElementById("updated").textContent = "更新于 " + (isNaN(d.getTime()) ? "--:--:--" :
+                pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds()));
+              var ok = data.codex && data.codex.ok && data.antigravity && data.antigravity.ok;
+              var cached = ok && (data.codex.staleError || data.antigravity.staleError);
+              syncDot.className = "dot" + (data.refreshing || cached ? " loading" : ok ? "" : " error");
+              syncText.textContent = data.refreshing ? "同步中" : cached ? "使用缓存" : ok ? "同步正常" : "同步异常";
+            } catch (e) {
+              syncDot.className = "dot error";
+              syncText.textContent = "解析异常";
+            }
+          } else {
+            syncDot.className = "dot error";
+            syncText.textContent = "连接电脑失败";
+          }
+        };
+        xhr.onerror = function () {
+          syncDot.className = "dot error";
+          syncText.textContent = "连接电脑失败";
+        };
+        xhr.send();
+      }
+
+      refreshBtn.addEventListener("click", function () {
+        syncDot.className = "dot loading";
+        syncText.textContent = "手动刷新...";
+        try {
+          var xhr = new XMLHttpRequest();
+          xhr.open("POST", "/api/refresh", true);
+          xhr.send();
+        } catch (e) {}
+        setTimeout(fetchQuota, 1500);
+      });
+
+      updateClock();
+      fetchQuota();
+      setInterval(updateClock, 5000);
+      setInterval(fetchQuota, 15000);
+      setInterval(pixelShift, 60000);
+    })();
+  </script>
+</body>
+</html>
