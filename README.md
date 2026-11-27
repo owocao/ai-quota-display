@@ -1,5 +1,12 @@
 # AI Quota Display（Codex & Antigravity 桌面副屏监控）
 
+> [!CAUTION]
+> **Google 账号风控警示（2026-11-27）**
+>
+> Google 已明确提示：第三方工具直接调用其内部接口 `cloudcode-pa.googleapis.com`（如 `v1internal:retrieveUserQuotaSummary`、`fetchAvailableModels` 等）会导致 Google 账号被风控标记（flagged）。
+>
+> 当前版本中 `server.py` 通过 `codexbar --provider antigravity --source oauth` 定时查询 Antigravity 额度，经核实其底层调用的正是上述内部接口。**强烈建议暂停对 Antigravity 的第三方轮询，仅在 Antigravity 官方客户端内查看额度**；若仅需监控 Codex，可自行将 `server.py` 中的 `PROVIDERS` 修改为 `("codex",)` 后使用。
+
 将一台闲置安卓手机（无需登录任何账号、无需 Root、支持 USB 或无线 ADB 连接）改造成桌面常亮小屏，实时显示当前 Mac 本机上的 **Codex**（5 小时 / 7 天剩余额度、Credits 余额、重置卡数量及到期时间）与 **Antigravity**（Gemini 与 Claude/GPT 的 5 小时 / 7 天剩余额度）订阅用量，并与 Mac 的锁屏/解锁/休眠自动联动息屏与亮屏。
 
 > 本文档面向日常使用者及后续接手维护/二次开发的 AI Agent，所有路径、接口和约束均与当前代码实现严格一致。
